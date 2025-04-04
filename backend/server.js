@@ -119,35 +119,47 @@ app.get("/posts", async (req, res) => {
       headers: { Authorization: `Bearer ${token}` },
     });
 
-    const users = usersRes.data.users;
-    const userIds = Object.keys(users);
+    // Convert users object to array of { id, name }
+    const users = Object.entries(usersRes.data.users).map(([id, name]) => ({
+      id,
+      name,
+    }));
 
     let allPosts = [];
 
-    // Step 2: Fetch posts for each user
-    for (const userId of userIds) {
+    // Step 2: Fetch posts for each user and store them in allPosts
+    for (const user of users) {
       try {
-        const postsRes = await axios.get(`${API_BASE}/users/${userId}/posts`, {
+        const postsRes = await axios.get(`${API_BASE}/users/${user.id}/posts`, {
           headers: { Authorization: `Bearer ${token}` },
         });
 
-        const posts = postsRes.data.posts;
-        if (Array.isArray(posts)) {
-          allPosts.push(...posts);
-        }
+        const posts = postsRes.data.posts || [];
+
+        // Attach user info to each post
+        const postsWithUser = posts.map((post) => ({
+          ...post,
+          userId: user.id,
+          userName: user.name,
+        }));
+
+        allPosts.push(...postsWithUser);
       } catch (err) {
-        console.error(`Failed to fetch posts for user ${userId}:`, err.message);
+        console.error(`Error fetching posts for user ${user.id}:`, err.message);
+        // continue with other users
       }
     }
 
+    // Handle "latest"
     if (type === "latest") {
-      // Sort by post ID descending (assumes higher ID = newer)
-      const latestPosts = allPosts.sort((a, b) => b.id - a.id).slice(0, 5);
+      const latestPosts = allPosts
+        .sort((a, b) => b.id - a.id) // Assuming higher ID is newer
+        .slice(0, 5);
 
       return res.json(latestPosts);
     }
 
-    // Popular posts: Add comment count to each post
+    // Handle "popular"
     const postsWithComments = await Promise.all(
       allPosts.map(async (post) => {
         try {
@@ -158,10 +170,11 @@ app.get("/posts", async (req, res) => {
             }
           );
 
-          const commentCount = commentsRes.data.comments.length;
+          const commentData = commentsRes.data.comments;
           return {
             ...post,
-            commentCount,
+            commentCount: commentData.length,
+            comments: commentData.map((c) => ({ content: c.content })),
           };
         } catch (err) {
           console.error(
