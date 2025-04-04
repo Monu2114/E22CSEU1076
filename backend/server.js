@@ -82,7 +82,7 @@ app.get("/users", async (req, res) => {
               headers: { Authorization: `Bearer ${token}` },
             }
           );
-
+          console.log(postsRes.data);
           return {
             userId: user.id,
             name: user.name,
@@ -107,5 +107,84 @@ app.get("/users", async (req, res) => {
   } catch (err) {
     console.error("TOP USERS ERROR:", err.response?.data || err.message);
     res.status(500).json({ error: "Failed to get top users" });
+  }
+});
+app.get("/posts", async (req, res) => {
+  const type = req.query.type;
+
+  if (!type || !["popular", "latest"].includes(type)) {
+    return res.status(400).json({ error: "Invalid or missing type parameter" });
+  }
+
+  try {
+    const token = await getToken();
+
+    // Step 1: Get all users
+    const usersRes = await axios.get(`${API_BASE}/users`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    const users = usersRes.data.users;
+    const userIds = Object.keys(users);
+
+    let allPosts = [];
+
+    // Step 2: Fetch posts for each user
+    for (const userId of userIds) {
+      try {
+        const postsRes = await axios.get(`${API_BASE}/users/${userId}/posts`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        const posts = postsRes.data.posts;
+        if (Array.isArray(posts)) {
+          allPosts.push(...posts);
+        }
+      } catch (err) {
+        console.error(`Failed to fetch posts for user ${userId}:`, err.message);
+      }
+    }
+
+    if (type === "latest") {
+      // Sort by post ID descending (assumes higher ID = newer)
+      const latestPosts = allPosts.sort((a, b) => b.id - a.id).slice(0, 5);
+
+      return res.json(latestPosts);
+    }
+
+    // Popular posts: Add comment count to each post
+    const postsWithComments = await Promise.all(
+      allPosts.map(async (post) => {
+        try {
+          const commentsRes = await axios.get(
+            `${API_BASE}/posts/${post.id}/comments`,
+            {
+              headers: { Authorization: `Bearer ${token}` },
+            }
+          );
+
+          const commentCount = commentsRes.data.comments.length;
+          return {
+            ...post,
+            commentCount,
+          };
+        } catch (err) {
+          console.error(
+            `Failed to get comments for post ${post.id}:`,
+            err.message
+          );
+          return { ...post, commentCount: 0 };
+        }
+      })
+    );
+
+    const popularPosts = postsWithComments
+      .sort((a, b) => b.commentCount - a.commentCount)
+      .slice(0, 5);
+
+    return res.json(popularPosts);
+  } catch (err) {
+    console.error("Error fetching posts:", err.response?.data || err.message);
+    res.status(500).json({ error: "Failed to fetch posts" });
   }
 });
