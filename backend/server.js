@@ -1,9 +1,16 @@
 require("dotenv").config();
 const express = require("express");
 const axios = require("axios");
-
+const cors = require("cors"); // ✅ this way
 const app = express();
-const PORT = 3000;
+const PORT = 5000;
+
+app.use(
+  cors({
+    origin: "http://localhost:3000", // or whatever your frontend runs on
+    credentials: true,
+  })
+);
 async function getToken() {
   try {
     const response = await axios.post(
@@ -28,53 +35,30 @@ async function getToken() {
 
 const API_BASE = "http://20.244.56.144/evaluation-service";
 
-app.get("/top-users", async (req, res) => {
-  try {
-    const token = await getToken();
-
-    const usersRes = await axios.get(`${API_BASE}/users`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
-
-    res.json(usersRes.data);
-  } catch (err) {
-    console.error(err.response?.data || err.message);
-    res.status(500).json({ error: "Failed to fetch users" });
-  }
-});
-
-app.listen(PORT, () => {
-  console.log(`Server running at http://localhost:${PORT}`);
-});
 const BEARER_TOKEN = process.env.BEARER_TOKEN;
 const axiosConfig = {
   headers: {
     Authorization: `Bearer ${BEARER_TOKEN}`,
   },
 };
-let users = {};
-let posts = [];
-let comments = {};
+
+// fetching top users
 
 app.get("/users", async (req, res) => {
   try {
-    const token = await getToken(); // get fresh token
+    const token = await getToken();
 
-    // Fetch users
     const usersRes = await axios.get(`${API_BASE}/users`, {
       headers: { Authorization: `Bearer ${token}` },
     });
 
-    const user_data = Object.entries(usersRes.data.users).map(([id, name]) => ({
+    const users = Object.entries(usersRes.data.users).map(([id, name]) => ({
       id,
       name,
     }));
 
-    // For each user, fetch post count
     const userPostCounts = await Promise.all(
-      user_data.map(async (user) => {
+      users.map(async (user) => {
         try {
           const postsRes = await axios.get(
             `${API_BASE}/users/${user.id}/posts`,
@@ -82,24 +66,33 @@ app.get("/users", async (req, res) => {
               headers: { Authorization: `Bearer ${token}` },
             }
           );
-          console.log(postsRes.data);
+
+          const postCount = Array.isArray(postsRes.data.posts)
+            ? postsRes.data.posts.length
+            : 0;
+
+          console.log(`User ${user.name} has ${postCount} posts`);
+
           return {
             userId: user.id,
             name: user.name,
-            postCount: postsRes.data.length,
+            postCount,
           };
         } catch (err) {
           console.error(
             `Error fetching posts for user ${user.id}:`,
             err.message
           );
-          return null;
+          return {
+            userId: user.id,
+            name: user.name,
+            postCount: 0,
+          };
         }
       })
     );
 
     const topUsers = userPostCounts
-      .filter(Boolean)
       .sort((a, b) => b.postCount - a.postCount)
       .slice(0, 5);
 
@@ -109,6 +102,8 @@ app.get("/users", async (req, res) => {
     res.status(500).json({ error: "Failed to get top users" });
   }
 });
+
+// posts and comments
 app.get("/posts", async (req, res) => {
   const type = req.query.type;
 
@@ -187,4 +182,8 @@ app.get("/posts", async (req, res) => {
     console.error("Error fetching posts:", err.response?.data || err.message);
     res.status(500).json({ error: "Failed to fetch posts" });
   }
+});
+
+app.listen(PORT, () => {
+  console.log(`Server running at http://localhost:${PORT}`);
 });

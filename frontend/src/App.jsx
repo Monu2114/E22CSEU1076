@@ -1,11 +1,6 @@
-import "./App.css";
-
+import User from "./pages/Users";
 function App() {
-  return (
-    <>
-      <div className="bg-pink">Hii </div>
-    </>
-  );
+  return <User />;
 }
 
 export default App;
