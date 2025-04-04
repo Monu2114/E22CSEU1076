@@ -119,7 +119,6 @@ app.get("/posts", async (req, res) => {
       headers: { Authorization: `Bearer ${token}` },
     });
 
-    // Convert users object to array of { id, name }
     const users = Object.entries(usersRes.data.users).map(([id, name]) => ({
       id,
       name,
@@ -146,20 +145,10 @@ app.get("/posts", async (req, res) => {
         allPosts.push(...postsWithUser);
       } catch (err) {
         console.error(`Error fetching posts for user ${user.id}:`, err.message);
-        // continue with other users
       }
     }
 
-    // Handle "latest"
-    if (type === "latest") {
-      const latestPosts = allPosts
-        .sort((a, b) => b.id - a.id) // Assuming higher ID is newer
-        .slice(0, 5);
-
-      return res.json(latestPosts);
-    }
-
-    // Handle "popular"
+    // Fetch comments for all posts
     const postsWithComments = await Promise.all(
       allPosts.map(async (post) => {
         try {
@@ -186,6 +175,16 @@ app.get("/posts", async (req, res) => {
       })
     );
 
+    // Handle "latest"
+    if (type === "latest") {
+      const latestPosts = postsWithComments
+        .sort((a, b) => b.id - a.id) // Assuming higher ID is newer
+        .slice(0, 5);
+
+      return res.json(latestPosts);
+    }
+
+    // Handle "popular"
     const popularPosts = postsWithComments
       .sort((a, b) => b.commentCount - a.commentCount)
       .slice(0, 5);
